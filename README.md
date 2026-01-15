@@ -4,9 +4,8 @@ A LangGraph-powered conversational agent for querying the IMDB Top 1000 dataset 
 
 ## Architecture
 
-```
-User Query → Router Agent → [DuckDB SQL | ChromaDB Vector Search] → Response Synthesizer → Answer
-```
+![Agent Workflow](images/AgentOverview.jpeg)
+
 
 **3 Query Types:**
 - **STRUCTURED**: SQL-based filtering/sorting (e.g., "Top 5 movies of 2019")
