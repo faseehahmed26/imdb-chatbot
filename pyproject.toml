@@ -1,0 +1,26 @@
+[project]
+name = "realpage-imdb"
+version = "0.1.0"
+description = "LangGraph-powered conversational agent for IMDB dataset queries with DuckDB and ChromaDB"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.2.1",
+    "chromadb>=1.4.1",
+    "langgraph>=0.2.62",
+    "langchain>=0.3.22",
+    "langchain-openai>=0.3.1",
+    "langchain-community>=0.3.20",
+    "langsmith>=0.2.18",
+    "openai>=2.15.0",
+    "streamlit>=1.53.0",
+    "python-telegram-bot>=21.10.0",
+    "python-dotenv>=1.2.1",
+    "pandas>=2.3.3",
+    "numpy>=2.4.1",
+    "pydantic>=2.12.5",
+    "tqdm>=4.66.0",
+    "ipykernel>=7.1.0",
+    "jupyter>=1.1.1",
+    "langgraph-checkpoint-sqlite>=3.0.2",
+]
