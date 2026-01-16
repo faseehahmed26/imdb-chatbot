@@ -7,10 +7,7 @@ A LangGraph-powered conversational agent for querying the IMDB Top 1000 dataset 
 <p align="center">
   <img src="images/AgentOverview.jpeg" alt="Agent Workflow" width="700">
 </p>
-**3 Query Types:**
-- **STRUCTURED**: SQL-based filtering/sorting (e.g., "Top 5 movies of 2019")
-- **SEMANTIC**: Theme-based search (e.g., "Movies with police involvement")  
-- **HYBRID**: Both (e.g., "Comedy movies with death themes")
+
 
 ## Quick Start
 
