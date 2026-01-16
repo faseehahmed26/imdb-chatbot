@@ -3,12 +3,12 @@ Test Script for IMDB Agent
 Tests all 9 sample questions from the assignment
 """
 
+from config import DUCKDB_PATH, CHROMA_PATH
+from agents import query_agent
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from agents import query_agent
-from config import DUCKDB_PATH, CHROMA_PATH
 
 # Test questions from assignment
 TEST_QUESTIONS = [
@@ -62,55 +62,61 @@ TEST_QUESTIONS = [
 
 def test_all_queries():
     """Run all test queries and report results"""
-    
+
     # Verify setup
     if not DUCKDB_PATH.exists():
         print("ERROR: DuckDB database not found. Run: python -m src.data_setup")
         return
-    
+
     if not CHROMA_PATH.exists():
         print("ERROR: ChromaDB not found. Run: python -m src.data_setup")
         return
-    
+
     print("\n" + "="*80)
     print("IMDB AGENT TEST SUITE")
     print("="*80)
-    
+
     results = []
-    
+
     for test in TEST_QUESTIONS:
         print(f"\n{'='*80}")
         print(f"TEST {test['id']}: {test['query']}")
         print(f"Expected Type: {test['expected_type']}")
         print("="*80)
-        
+
         try:
             result = query_agent(test['query'])
-            
+
             success = result['success']
             query_type = result.get('query_type', 'UNKNOWN')
             type_match = query_type == test['expected_type']
-            
-            print(f"\n✅ Success: {success}")
-            print(f"📊 Query Type: {query_type} {'✅' if type_match else '❌ (expected ' + test['expected_type'] + ')'}")
-            
+
+            print(f"\n[SUCCESS] Success: {success}")
+            print(
+                f"Query Type: {query_type} {'[PASS]' if type_match else '[FAIL] (expected ' + test['expected_type'] + ')'}")
+
             if result.get('sql_query'):
-                print(f"\n💾 SQL Query:\n{result['sql_query']}")
-            
+                print(f"\n[SQL] SQL Query:\n{result['sql_query']}")
+
             if result.get('sql_results'):
                 if result['sql_results'].get('success'):
-                    print(f"✅ SQL executed successfully: {result['sql_results'].get('row_count', 0)} rows")
+                    print(
+                        f"[SUCCESS] SQL executed successfully: {result['sql_results'].get('row_count', 0)} rows")
                 else:
-                    print(f"❌ SQL error: {result['sql_results'].get('error')}")
-            
+                    print(
+                        f"[FAIL] SQL error: {result['sql_results'].get('error')}")
+
             if result.get('semantic_results'):
                 if result['semantic_results'].get('success'):
-                    print(f"✅ Semantic search: {result['semantic_results'].get('count', 0)} results")
+                    print(
+                        f"[SUCCESS] Semantic search: {result['semantic_results'].get('count', 0)} results")
                 else:
-                    print(f"❌ Semantic error: {result['semantic_results'].get('error')}")
-            
-            print(f"\n📝 Response (first 300 chars):\n{result['response'][:300]}...")
-            
+                    print(
+                        f"[FAIL] Semantic error: {result['semantic_results'].get('error')}")
+
+            print(
+                f"\n[RESPONSE] Response (first 300 chars):\n{result['response'][:300]}...")
+
             results.append({
                 "test_id": test['id'],
                 "query": test['query'],
@@ -118,12 +124,12 @@ def test_all_queries():
                 "type_match": type_match,
                 "error": result.get('error')
             })
-            
+
         except Exception as e:
-            print(f"\n❌ ERROR: {e}")
+            print(f"\n[ERROR] ERROR: {e}")
             import traceback
             traceback.print_exc()
-            
+
             results.append({
                 "test_id": test['id'],
                 "query": test['query'],
@@ -131,27 +137,28 @@ def test_all_queries():
                 "type_match": False,
                 "error": str(e)
             })
-    
+
     # Summary
     print("\n\n" + "="*80)
     print("TEST SUMMARY")
     print("="*80)
-    
+
     successful = sum(1 for r in results if r['success'])
     type_matches = sum(1 for r in results if r['type_match'])
-    
+
     print(f"\nTotal Tests: {len(results)}")
     print(f"Successful: {successful}/{len(results)}")
     print(f"Correct Type Classification: {type_matches}/{len(results)}")
-    
+
     print("\nDetailed Results:")
     for r in results:
-        status = "✅" if r['success'] else "❌"
-        type_status = "✅" if r['type_match'] else "❌"
-        print(f"  {status} {type_status} Test {r['test_id']}: {r['query'][:50]}...")
+        status = "[PASS]" if r['success'] else "[FAIL]"
+        type_status = "[PASS]" if r['type_match'] else "[FAIL]"
+        print(
+            f"  {status} {type_status} Test {r['test_id']}: {r['query'][:50]}...")
         if r['error']:
             print(f"      Error: {r['error']}")
-    
+
     print("\n" + "="*80)
 
 

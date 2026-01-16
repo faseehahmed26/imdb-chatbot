@@ -36,7 +36,6 @@ if not OPENAI_API_KEY:
 
 st.set_page_config(
     page_title="IMDB Movie Chat",
-    page_icon="🎬",
     layout="centered"
 )
 
@@ -98,7 +97,7 @@ with st.sidebar:
     st.markdown("---")
 
     # New Chat Button
-    if st.button("➕ New Chat", use_container_width=True):
+    if st.button("+ New Chat", use_container_width=True):
         new_thread = create_new_thread()
         st.session_state['current_thread'] = new_thread
         st.session_state['thread_messages'][new_thread] = []
@@ -149,7 +148,7 @@ with st.sidebar:
             with col2:
                 # Only show delete button if not current thread
                 if thread_id != current_thread:
-                    if st.button("🗑️", key=f"delete_{thread_id}"):
+                    if st.button("X", key=f"delete_{thread_id}"):
                         # Delete from checkpointer
                         delete_thread(thread_id)
                         # Delete from session state

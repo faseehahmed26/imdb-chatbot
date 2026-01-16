@@ -37,11 +37,6 @@ python -m src.data_setup
 streamlit run src/app.py
 ```
 
-**Telegram Bot:**
-```bash
-python -m src.telegram_bot
-```
-
 **Test Suite:**
 ```bash
 python -m src.test_queries
@@ -58,7 +53,6 @@ realpage-imdb/
 │   ├── prompts.py         # All LLM prompt templates
 │   ├── agents.py          # 4 agents + LangGraph workflow
 │   ├── app.py             # Streamlit UI
-│   ├── telegram_bot.py    # Telegram integration
 │   └── test_queries.py    # Test suite
 ├── data/
 │   ├── imdb_top_1000.csv  # Source data
@@ -91,7 +85,6 @@ realpage-imdb/
 - **ChromaDB**: Vector database for semantic search
 - **OpenAI**: LLM (GPT-4o-mini) + embeddings
 - **Streamlit**: Web UI
-- **python-telegram-bot**: Telegram integration
 - **LangSmith** (optional): Monitoring and tracing
 
 ## Documentation

@@ -360,59 +360,6 @@ streamlit run src/app.py
 
 ---
 
-## `src/telegram_bot.py`
-
-**Purpose**: Telegram bot integration
-
-### Command Handlers
-
-#### `start_command(update, context)`
-- Sends welcome message
-- Lists example questions
-- Shows available commands
-
-#### `help_command(update, context)`
-- Explains what the bot can do
-- Shows query types
-- Provides tips
-
-#### `examples_command(update, context)`
-- Lists all 9 test questions
-
-### Message Handler
-
-#### `handle_message(update, context)`
-**What it does:**
-1. Gets user message text
-2. Validates API key
-3. Shows typing indicator
-4. Calls `query_agent(user_query)`
-5. Formats response for Telegram
-6. Splits long messages (4096 char limit)
-7. Sends query type as follow-up
-8. Handles errors
-
-### Error Handler
-
-#### `error_handler(update, context)`
-- Logs errors
-- Sends user-friendly error message
-
-### Main Function
-
-#### `main()`
-- Validates configuration (API keys, databases)
-- Creates Telegram Application
-- Registers all handlers
-- Starts polling
-
-### Usage
-```bash
-python -m src.telegram_bot
-```
-
----
-
 ## `src/test_queries.py`
 
 **Purpose**: Test suite for all 9 assignment questions
@@ -522,7 +469,7 @@ python -m src.test_queries
 
 ### Adding Voice Capabilities
 1. Create `src/voice.py` with Whisper/TTS functions
-2. Update `telegram_bot.py` to accept voice messages
+2. Update `app.py` to accept audio input in Streamlit
 3. Convert audio → text → agent → text → audio
 
 ---
