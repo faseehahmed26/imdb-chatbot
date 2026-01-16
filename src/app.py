@@ -5,9 +5,8 @@ from datetime import datetime
 from agents import query_agent_stream, list_all_threads, get_thread_first_message, delete_thread, get_thread_messages
 from config import DUCKDB_PATH, CHROMA_PATH, OPENAI_API_KEY, LLM_MODEL
 
-# =============================================================================
 # STARTUP CHECK
-# =============================================================================
+
 
 # Check if data setup is complete
 if not DUCKDB_PATH.exists() or not CHROMA_PATH.exists():
@@ -30,9 +29,7 @@ if not OPENAI_API_KEY:
     st.error("Please configure your OpenAI API key in the .env file")
     st.stop()
 
-# =============================================================================
 # PAGE CONFIG
-# =============================================================================
 
 st.set_page_config(
     page_title="IMDB Movie Chat",
@@ -161,9 +158,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Ask me anything about the IMDB Top 1000 movies!")
 
-# =============================================================================
 # MAIN CHAT INTERFACE
-# =============================================================================
 
 st.title("IMDB Movie Chat")
 

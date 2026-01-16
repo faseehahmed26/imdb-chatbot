@@ -74,11 +74,11 @@ def router_agent(state: AgentState) -> AgentState:
     try:
         llm = get_llm()
         prompts = format_router_prompt(query)
+        conversation_messages = state.get("messages", [])
 
-        messages = [
-            SystemMessage(content=prompts["system"]),
-            HumanMessage(content=prompts["user"])
-        ]
+        messages = [SystemMessage(content=prompts["system"])]
+        messages.extend(conversation_messages)
+        messages.append(HumanMessage(content=prompts["user"]))
 
         response = llm.invoke(messages)
         content = response.content.strip().upper()
@@ -121,11 +121,11 @@ def checker_agent(state: AgentState) -> AgentState:
     try:
         llm = get_llm()
         prompts = format_checker_prompt(query, query_type)
+        conversation_messages = state.get("messages", [])
 
-        messages = [
-            SystemMessage(content=prompts["system"]),
-            HumanMessage(content=prompts["user"])
-        ]
+        messages = [SystemMessage(content=prompts["system"])]
+        messages.extend(conversation_messages)
+        messages.append(HumanMessage(content=prompts["user"]))
 
         response = llm.invoke(messages)
         content = response.content.strip()

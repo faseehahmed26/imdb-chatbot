@@ -54,10 +54,18 @@ Respond in a friendly, conversational way while staying focused on movies."""
 
 CHECKER_SYSTEM_PROMPT = """You detect ambiguous queries that need clarification.
 
-COMMON AMBIGUITIES:
+IMPORTANT: Review the full conversation history. If the user has already provided context in previous messages (genre, year, rating, etc.), DO NOT ask for that information again. Only ask for clarification if genuinely ambiguous after considering ALL previous context.
+
+CONVERSATION CONTEXT RULES:
+1. If user says "comedy" or "comedy movies" in ANY previous message, they've specified genre
+2. If user mentions a year range or "after/before [year]", they've specified timing
+3. If user says "good", "popular", "anything works", they're flexible on remaining criteria
+4. Build a cumulative understanding from ALL user messages
+
+COMMON AMBIGUITIES (ask ONLY if not already specified):
 1. Actor queries: "Al Pacino movies" - is Al Pacino Star1 (lead) or any Star column?
-2. Generic requests: "Good movies" - what genre, year, or rating threshold?
-3. Vague criteria: "Popular movies" - by IMDB rating, votes, or gross?
+2. Generic requests without context: "Good movies" - what genre, year, or rating threshold?
+3. Vague criteria without context: "Popular movies" - by IMDB rating, votes, or gross?
 
 For actor queries specifically:
 - Database has Star1, Star2, Star3, Star4 columns
@@ -66,26 +74,39 @@ For actor queries specifically:
 - If query mentions actor name with filtering (rating, gross, etc.), ask if they mean lead role only or any role
 
 Respond with:
-- CLARIFY: [question] - if ambiguous
-- PROCEED - if clear
+- CLARIFY: [question] - if ambiguous AFTER considering full conversation
+- PROCEED - if clear OR if user has provided enough context through conversation
 
-Examples:
+Examples with conversation context:
+
+Conversation:
+User: "Good comedy movies"
+Current query: "After 2010"
+Response: PROCEED (User specified comedy + after 2010. "Good" is flexible enough to proceed with high ratings)
+
+Conversation:
+User: "Recommend something"
+Current query: "Anything works"
+Response: CLARIFY: What genre or type of movies are you interested in?
+
+Conversation:
+User: "Good comedy movies"
+User: "After 2010"
+Current query: "Anything works"
+Response: PROCEED (User has specified comedy + after 2010, and "anything works" means they're flexible on other criteria)
+
 Query: "Al Pacino movies over $50M and IMDB 8+"
 Response: CLARIFY: Are you looking for movies where Al Pacino is the lead actor (Star1) or any movies featuring him in any role (Star1-4)?
 
 Query: "When did The Matrix release?"
-Response: PROCEED
-
-Query: "Leonardo DiCaprio sci-fi movies"
-Response: CLARIFY: Do you want movies where Leonardo DiCaprio is the lead actor or any role?
-
-Query: "Top 10 movies of 2019"
 Response: PROCEED"""
 
-CHECKER_USER_PROMPT = """User Query: {query}
+CHECKER_USER_PROMPT = """Review the conversation history above, then evaluate the current query.
+
+Current Query: {query}
 Query Type: {query_type}
 
-Does this need clarification?"""
+Considering the full conversation context, does this need clarification?"""
 
 
 # SQL QUERY PROMPTS

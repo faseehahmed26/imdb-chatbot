@@ -8,6 +8,7 @@ import chromadb
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from openai import OpenAI
+from langsmith import traceable
 
 from config import DUCKDB_PATH, CHROMA_PATH, OPENAI_API_KEY, EMBEDDING_MODEL
 
@@ -30,6 +31,7 @@ class DuckDBTool:
             )
         self.con = duckdb.connect(str(self.db_path), read_only=False)
 
+    @traceable(name="duckdb_execute_query", run_type="tool")
     def execute_query(self, sql: str) -> Dict[str, Any]:
         """
         Execute SQL query and return results
@@ -54,6 +56,7 @@ class DuckDBTool:
                 "sql": sql
             }
 
+    @traceable(name="duckdb_get_schema", run_type="tool")
     def get_schema(self) -> str:
         """
         Return database schema for use in prompts
@@ -134,6 +137,7 @@ class ChromaDBTool:
                 f"Please run 'python -m src.data_setup' first. Error: {e}"
             )
 
+    @traceable(name="chromadb_search", run_type="tool")
     def search(
         self,
         query: str,
@@ -190,6 +194,7 @@ class ChromaDBTool:
                 "query": query
             }
 
+    @traceable(name="chromadb_search_with_filter", run_type="tool")
     def search_with_structured_filter(
         self,
         query: str,
