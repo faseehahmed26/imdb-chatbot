@@ -26,7 +26,8 @@ from typing import TypedDict, Literal, Optional, List, Dict, Any, Annotated
 # STATE DEFINITION
 class AgentState(TypedDict):
     """State passed between agents in the workflow"""
-    query: str
+    query: Annotated[str, lambda x,
+                     y: y if y else x]  # Keep new value if provided
     query_type: Optional[Literal["SQL",
                                  "SEMANTIC", "HYBRID", "GENERAL"]]
     routing_reasoning: Optional[str]
@@ -189,17 +190,21 @@ def sql_agent(state: AgentState) -> AgentState:
         result = db_tool.execute_query(sql_query)
 
         if result["success"]:
-            state["sql_results"] = result
-            print(f"[STRUCTURED] Found {result['row_count']} results")
+            return {
+                "sql_query": sql_query,
+                "sql_results": result
+            }
         else:
-            state["sql_error"] = result["error"]
-            print(f"[STRUCTURED ERROR] {result['error']}")
+            return {
+                "sql_query": sql_query,
+                "sql_error": result["error"]
+            }
 
     except Exception as e:
         print(f"[STRUCTURED ERROR] {e}")
-        state["sql_error"] = str(e)
-
-    return state
+        return {
+            "sql_error": str(e)
+        }
 
 
 # RAG AGENT
@@ -258,7 +263,11 @@ def rag_agent(state: AgentState) -> AgentState:
         print(f"[RAG ERROR] {e}")
         state["semantic_error"] = str(e)
 
-    return state
+    return {
+        "semantic_query": state.get("semantic_query"),
+        "semantic_results": state.get("semantic_results"),
+        "semantic_error": state.get("semantic_error")
+    }
 
 
 # GENERAL AGENT

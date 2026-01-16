@@ -93,26 +93,6 @@ Sample Data:
 
         return schema_info
 
-    def get_table_stats(self) -> Dict[str, Any]:
-        """Get basic statistics about the database"""
-        try:
-            stats = {}
-            stats['total_movies'] = self.con.execute(
-                "SELECT COUNT(*) FROM imdb").fetchone()[0]
-            stats['year_range'] = self.con.execute(
-                "SELECT MIN(Released_Year), MAX(Released_Year) FROM imdb WHERE Released_Year IS NOT NULL"
-            ).fetchone()
-            stats['rating_range'] = self.con.execute(
-                "SELECT MIN(IMDB_Rating), MAX(IMDB_Rating) FROM imdb WHERE IMDB_Rating IS NOT NULL"
-            ).fetchone()
-            stats['top_genres'] = self.con.execute(
-                "SELECT DISTINCT Genre FROM imdb LIMIT 10"
-            ).fetchdf()['Genre'].tolist()
-
-            return {"success": True, "stats": stats}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
     def close(self):
         """Close database connection"""
         if self.con:
