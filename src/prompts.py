@@ -1,39 +1,29 @@
 ROUTER_SYSTEM_PROMPT = """You are a query router for an IMDB movie database system.
-Your job is to classify user queries into one of four types:
+Classify user queries into ONE of these types:
 
-1. SQL: Queries that require filtering, sorting, aggregations, or top-N operations on SQL data
-   Examples:
-   - "When did The Matrix release?"
-   - "Top 5 movies of 2019 by meta score"
-   - "Directors with movies grossing over $500M at least twice"
-   - "Movies with IMDB rating > 8 and meta score > 85"
+SQL: Filtering, sorting, aggregations, top-N on structured data
+- "When did The Matrix release?"
+- "Top 5 movies of 2019"
+- "Directors with movies grossing over $500M twice"
 
-2. SEMANTIC: Queries that require understanding movie plots, themes, or semantic concepts
-   Examples:
-   - "Movies with police involvement"
-   - "Films about death and dying"
-   - "Stories with redemption themes"
-   - "Movies similar to Inception"
+SEMANTIC: Understanding plots, themes, concepts
+- "Movies with police involvement"
+- "Films about death and dying"
+- "Movies similar to Inception"
 
-3. HYBRID: Queries that need BOTH SQL filtering AND semantic search
-   Examples:
-   - "Comedy movies with death themes" (filter genre + semantic search)
-   - "Horror movies before 1990 with police in the plot" (filter genre/year + semantic)
-   - "Steven Spielberg sci-fi movies - summarize plots" (filter director/genre + semantic analysis)
+HYBRID: BOTH SQL filtering AND semantic search
+- "Comedy movies with death themes"
+- "Horror before 1990 with police plots"
 
-4. GENERAL: Conversational queries, greetings, or general movie discussion
-   Examples:
-   - "Hi", "Hello", "Hey there"
-   - "What can you do?"
-   - "Tell me about movies"
-   - "Thanks", "Goodbye"
+GENERAL: Greetings, general conversation
+- "Hi", "Hello"
+- "What can you do?"
 
-Classify the user's query and provide reasoning for your classification."""
+Respond with ONLY ONE WORD in capitals: SQL, SEMANTIC, HYBRID, or GENERAL"""
 
 ROUTER_USER_PROMPT = """User Query: {query}
 
-Classify this query as SQL, SEMANTIC, HYBRID, or GENERAL.
-Provide your reasoning."""
+Classification:"""
 
 # GENERAL QUERY PROMPTS
 
@@ -58,6 +48,44 @@ Keep responses brief and friendly."""
 GENERAL_QUERY_USER_PROMPT = """User Query: {query}
 
 Respond in a friendly, conversational way while staying focused on movies."""
+
+
+# CHECKER PROMPTS
+
+CHECKER_SYSTEM_PROMPT = """You detect ambiguous queries that need clarification.
+
+COMMON AMBIGUITIES:
+1. Actor queries: "Al Pacino movies" - is Al Pacino Star1 (lead) or any Star column?
+2. Generic requests: "Good movies" - what genre, year, or rating threshold?
+3. Vague criteria: "Popular movies" - by IMDB rating, votes, or gross?
+
+For actor queries specifically:
+- Database has Star1, Star2, Star3, Star4 columns
+- Star1 = lead actor
+- Star2/3/4 = supporting actors
+- If query mentions actor name with filtering (rating, gross, etc.), ask if they mean lead role only or any role
+
+Respond with:
+- CLARIFY: [question] - if ambiguous
+- PROCEED - if clear
+
+Examples:
+Query: "Al Pacino movies over $50M and IMDB 8+"
+Response: CLARIFY: Are you looking for movies where Al Pacino is the lead actor (Star1) or any movies featuring him in any role (Star1-4)?
+
+Query: "When did The Matrix release?"
+Response: PROCEED
+
+Query: "Leonardo DiCaprio sci-fi movies"
+Response: CLARIFY: Do you want movies where Leonardo DiCaprio is the lead actor or any role?
+
+Query: "Top 10 movies of 2019"
+Response: PROCEED"""
+
+CHECKER_USER_PROMPT = """User Query: {query}
+Query Type: {query_type}
+
+Does this need clarification?"""
 
 
 # SQL QUERY PROMPTS
@@ -145,6 +173,10 @@ Results: 10
 Query: "Steven Spielberg sci-fi movies"
 Search Query: "science fiction futuristic technology space aliens robots AI"
 Metadata Filter: {"Director": "Steven Spielberg", "Genre": {"$contains": "Sci-Fi"}}
+Results: 10
+Query: "Leonardo DiCaprio sci-fi movies"
+Search Query: "science fiction futuristic technology space aliens robots AI"
+Metadata Filter: {"Star1": "Leonardo DiCaprio", "Genre": {"$contains": "Sci-Fi"}}
 Results: 10"""
 
 RAG_QUERY_USER_PROMPT = """User Query: {query}
@@ -299,6 +331,14 @@ def format_general_query_prompt(query: str) -> dict:
     return {
         "system": GENERAL_QUERY_SYSTEM_PROMPT,
         "user": GENERAL_QUERY_USER_PROMPT.format(query=query)
+    }
+
+
+def format_checker_prompt(query: str, query_type: str) -> dict:
+    """Format checker prompt for LLM"""
+    return {
+        "system": CHECKER_SYSTEM_PROMPT,
+        "user": CHECKER_USER_PROMPT.format(query=query, query_type=query_type)
     }
 
 

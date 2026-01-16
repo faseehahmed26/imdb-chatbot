@@ -55,6 +55,19 @@ def get_thread_display_name(thread_id: str) -> str:
         return preview
     return f"Chat {thread_id[-8:]}"
 
+
+def get_thread_timestamp(thread_id: str) -> str:
+    """Extract timestamp from thread ID for sorting"""
+    try:
+        # Thread ID format: thread-{uuid}-{timestamp}
+        parts = thread_id.split('-')
+        if len(parts) >= 3:
+            # Last part is the timestamp
+            return parts[-1]
+        return thread_id
+    except:
+        return thread_id
+
 # SESSION STATE INITIALIZATION
 
 
@@ -102,11 +115,21 @@ with st.sidebar:
     all_thread_ids = list(set(all_threads + session_threads))
 
     if all_thread_ids:
-        # Sort threads (most recent first)
-        all_thread_ids = sorted(all_thread_ids, reverse=True)
+        # Sort by timestamp extracted from thread ID (most recent first)
+        all_thread_ids = sorted(
+            all_thread_ids,
+            key=get_thread_timestamp,
+            reverse=True
+        )
 
         for thread_id in all_thread_ids[:10]:  # Show max 10 threads
             display_name = get_thread_display_name(thread_id)
+            # If display name is too generic, add a visual separator
+            if display_name.startswith("Chat"):
+                display_name = f"{display_name}"
+            else:
+                display_name = f"{display_name[:40]}..." if len(
+                    display_name) > 40 else f" {display_name}"
 
             # Create columns for thread button and delete button
             col1, col2 = st.columns([4, 1])

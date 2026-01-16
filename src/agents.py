@@ -4,6 +4,7 @@ from prompts import (
     format_rag_query_prompt,
     format_synthesizer_prompt,
     format_general_query_prompt,
+    format_checker_prompt,
     ERROR_NO_RESULTS,
     ERROR_SQL_FAILED,
     ERROR_SEMANTIC_FAILED
@@ -30,6 +31,10 @@ class AgentState(TypedDict):
                                  "SEMANTIC", "HYBRID", "GENERAL"]]
     routing_reasoning: Optional[str]
     messages: Annotated[List[BaseMessage], add_messages]
+
+    # Clarification fields
+    needs_clarification: bool
+    clarification_question: Optional[str]
 
     # Structured query results
     sql_query: Optional[str]
@@ -63,10 +68,6 @@ def get_llm():
 
 
 def router_agent(state: AgentState) -> AgentState:
-    """
-    Route query to appropriate agent(s)
-    Classifies query as SQL, SEMANTIC, or HYBRID
-    """
     query = state["query"]
 
     try:
@@ -79,45 +80,75 @@ def router_agent(state: AgentState) -> AgentState:
         ]
 
         response = llm.invoke(messages)
-        content = response.content
+        content = response.content.strip().upper()
 
-        # Extract query type from response
-        content_upper = content.upper()
-        query_type = None
+        # Extract first word from response
+        first_word = content.split()[0] if content else "GENERAL"
 
-        # Look for explicit classification first
-        if "CLASSIFIED AS GENERAL" in content_upper or content_upper.startswith("GENERAL"):
-            query_type = "GENERAL"
-        elif "CLASSIFIED AS SQL" in content_upper or "SQL" in content_upper.split()[0:3]:
+        # Map to valid types
+        if "SQL" in first_word:
             query_type = "SQL"
-        elif "CLASSIFIED AS SEMANTIC" in content_upper:
+        elif "SEMANTIC" in first_word:
             query_type = "SEMANTIC"
-        elif "CLASSIFIED AS HYBRID" in content_upper:
+        elif "HYBRID" in first_word:
             query_type = "HYBRID"
-        elif "GENERAL" in content_upper:
+        elif "GENERAL" in first_word:
             query_type = "GENERAL"
-        elif "SEMANTIC" in content_upper:
-            query_type = "SEMANTIC"
-        elif "SQL" in content_upper:
-            query_type = "SQL"
         else:
             query_type = "GENERAL"
 
         state["query_type"] = query_type
-        state["routing_reasoning"] = content
-        state["messages"] = [response]  # Will be merged by add_messages
+        state["routing_reasoning"] = content  # Store full response
+
         print(f"\n[ROUTER] Classified as: {query_type}")
-        print(f"[ROUTER] Reasoning: {content[:200]}...")
 
     except Exception as e:
         print(f"[ROUTER ERROR] {e}")
-        state["query_type"] = "General"  # Default fallback
+        state["query_type"] = "GENERAL"
         state["error"] = f"Router error: {e}"
 
     return state
 
 
+# CHECKER AGENT
+
+def checker_agent(state: AgentState) -> AgentState:
+    """Check if query needs clarification before proceeding"""
+    query = state["query"]
+    query_type = state.get("query_type", "SQL")
+
+    try:
+        llm = get_llm()
+        prompts = format_checker_prompt(query, query_type)
+
+        messages = [
+            SystemMessage(content=prompts["system"]),
+            HumanMessage(content=prompts["user"])
+        ]
+
+        response = llm.invoke(messages)
+        content = response.content.strip()
+
+        if content.startswith("CLARIFY:"):
+            clarification_q = content.replace("CLARIFY:", "").strip()
+            state["needs_clarification"] = True
+            state["clarification_question"] = clarification_q
+            state["final_response"] = clarification_q
+            print(f"\n[CHECKER] Needs clarification: {clarification_q}")
+        else:
+            state["needs_clarification"] = False
+            state["clarification_question"] = None
+            print(f"\n[CHECKER] Query is clear, proceeding")
+
+    except Exception as e:
+        print(f"[CHECKER ERROR] {e}")
+        state["needs_clarification"] = False
+
+    return state
+
+
 # SQL AGENT
+
 
 def sql_agent(state: AgentState) -> AgentState:
     """
@@ -356,6 +387,25 @@ def route_based_on_type(state: AgentState) -> List[str]:
         return ["sql_query", "semantic_query"]
 
 
+def route_after_checker(state: AgentState) -> List[str]:
+    """
+    Route after checker: to END if clarification needed, otherwise continue
+    """
+    if state.get("needs_clarification", False):
+        return ["end"]
+
+    query_type = state.get("query_type", "SQL")
+
+    if query_type == "GENERAL":
+        return ["general_query"]
+    elif query_type == "SQL":
+        return ["sql_query"]
+    elif query_type == "SEMANTIC":
+        return ["semantic_query"]
+    else:  # HYBRID
+        return ["sql_query", "semantic_query"]
+
+
 def create_workflow() -> StateGraph:
     """
     Create and compile the LangGraph workflow with checkpointer
@@ -365,6 +415,7 @@ def create_workflow() -> StateGraph:
 
     # Add nodes
     workflow.add_node("route_query", router_agent)
+    workflow.add_node("checker", checker_agent)
     workflow.add_node("sql_query", sql_agent)
     workflow.add_node("semantic_query", rag_agent)
     workflow.add_node("general_query", general_agent)
@@ -373,11 +424,15 @@ def create_workflow() -> StateGraph:
     # Set entry point
     workflow.set_entry_point("route_query")
 
-    # Add conditional edges from router
+    # Router always goes to checker
+    workflow.add_edge("route_query", "checker")
+
+    # Checker conditionally routes
     workflow.add_conditional_edges(
-        "route_query",
-        route_based_on_type,
+        "checker",
+        route_after_checker,
         {
+            "end": END,
             "general_query": "general_query",
             "sql_query": "sql_query",
             "semantic_query": "semantic_query"
@@ -430,6 +485,8 @@ def query_agent(query: str, thread_id: str = "default") -> Dict[str, Any]:
         "query": query,
         "query_type": None,
         "routing_reasoning": None,
+        "needs_clarification": False,
+        "clarification_question": None,
         "sql_query": None,
         "sql_results": None,
         "sql_error": None,
@@ -491,6 +548,8 @@ def query_agent_stream(query: str, thread_id: str = "default"):
         "query": query,
         "query_type": None,
         "routing_reasoning": None,
+        "needs_clarification": False,
+        "clarification_question": None,
         "sql_query": None,
         "sql_results": None,
         "sql_error": None,
