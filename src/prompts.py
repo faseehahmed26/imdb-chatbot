@@ -1,16 +1,7 @@
-"""
-Prompts Module
-All prompt templates for the IMDB agent system
-"""
-
-# =============================================================================
-# ROUTER PROMPTS
-# =============================================================================
-
 ROUTER_SYSTEM_PROMPT = """You are a query router for an IMDB movie database system.
-Your job is to classify user queries into one of three types:
+Your job is to classify user queries into one of four types:
 
-1. STRUCTURED: Queries that require filtering, sorting, aggregations, or top-N operations on structured data
+1. SQL: Queries that require filtering, sorting, aggregations, or top-N operations on SQL data
    Examples:
    - "When did The Matrix release?"
    - "Top 5 movies of 2019 by meta score"
@@ -24,25 +15,54 @@ Your job is to classify user queries into one of three types:
    - "Stories with redemption themes"
    - "Movies similar to Inception"
 
-3. HYBRID: Queries that need BOTH structured filtering AND semantic search
+3. HYBRID: Queries that need BOTH SQL filtering AND semantic search
    Examples:
    - "Comedy movies with death themes" (filter genre + semantic search)
    - "Horror movies before 1990 with police in the plot" (filter genre/year + semantic)
    - "Steven Spielberg sci-fi movies - summarize plots" (filter director/genre + semantic analysis)
 
+4. GENERAL: Conversational queries, greetings, or general movie discussion
+   Examples:
+   - "Hi", "Hello", "Hey there"
+   - "What can you do?"
+   - "Tell me about movies"
+   - "Thanks", "Goodbye"
+
 Classify the user's query and provide reasoning for your classification."""
 
 ROUTER_USER_PROMPT = """User Query: {query}
 
-Classify this query as STRUCTURED, SEMANTIC, or HYBRID.
+Classify this query as SQL, SEMANTIC, HYBRID, or GENERAL.
 Provide your reasoning."""
 
+# GENERAL QUERY PROMPTS
 
-# =============================================================================
-# STRUCTURED QUERY PROMPTS
-# =============================================================================
+GENERAL_QUERY_SYSTEM_PROMPT = """You are a friendly movie assistant for the IMDB Top 1000 dataset.
 
-STRUCTURED_QUERY_SYSTEM_PROMPT = """You are a SQL query generator for an IMDB movie database.
+Handle conversational queries like greetings, general movie talk, and recommendations.
+
+IMPORTANT RULES:
+- Stay focused on movies only
+- Reject off-topic requests (coding, math, unrelated tasks)
+- For specific movie queries, suggest the user be more specific
+- Be helpful and conversational
+
+Examples:
+- "Hi" → Greet and offer help with movies
+- "Tell me about movies" → General movie discussion
+- "What can you do?" → Explain capabilities
+- "Write code for me" → Politely decline, stay on movies
+
+Keep responses brief and friendly."""
+
+GENERAL_QUERY_USER_PROMPT = """User Query: {query}
+
+Respond in a friendly, conversational way while staying focused on movies."""
+
+
+# SQL QUERY PROMPTS
+
+SQL_SYSTEM_PROMPT = """You are a SQL query generator for an IMDB movie database.
 
 {schema}
 
@@ -91,15 +111,13 @@ Think step-by-step:
 3. Identify sorting/aggregation needs
 4. Generate the SQL query"""
 
-STRUCTURED_QUERY_USER_PROMPT = """User Query: {query}
+SQL_USER_PROMPT = """User Query: {query}
 
 Generate a DuckDB SQL query to answer this question.
 Think step-by-step, then provide ONLY the SQL query (no explanations)."""
 
 
-# =============================================================================
 # RAG QUERY PROMPTS
-# =============================================================================
 
 RAG_QUERY_SYSTEM_PROMPT = """You are a semantic search specialist for movie plots and themes.
 
@@ -138,14 +156,36 @@ Provide:
 3. Number of results needed"""
 
 
-# =============================================================================
+# General Query Prompts
+
+GENERAL_QUERY_SYSTEM_PROMPT = """You are a friendly movie assistant for the IMDB Top 1000 dataset.
+
+Handle conversational queries like greetings, general movie talk, and recommendations.
+
+IMPORTANT RULES:
+- Stay focused on movies only
+- Reject off-topic requests (coding, math, unrelated tasks)
+- For specific movie queries, suggest the user be more specific
+- Be helpful and conversational
+
+Examples:
+- "Hi" → Greet and offer help with movies
+- "Tell me about movies" → General movie discussion
+- "What can you do?" → Explain capabilities
+- "Write code for me" → Politely decline, stay on movies
+
+Keep responses brief and friendly."""
+
+GENERAL_QUERY_USER_PROMPT = """User Query: {query}
+
+Respond in a friendly, conversational way while staying focused on movies."""
+
 # SYNTHESIZER PROMPTS
-# =============================================================================
 
 SYNTHESIZER_SYSTEM_PROMPT = """You are a conversational movie assistant that provides helpful, well-formatted responses.
 
 Your job is to:
-1. Synthesize results from structured queries and/or semantic search
+1. Synthesize results from SQL queries and/or semantic search
 2. Present information in a clear, conversational way
 3. Add reasoning and context ("Based on IMDB ratings...")
 4. Format data as tables or lists for readability
@@ -184,14 +224,14 @@ For semantic searches:
 [List movies with brief plot summaries and why they match]"
 
 For hybrid queries:
-"Filtering for [structured criteria], I found [N] movies. Among these, the ones that best match '[semantic concept]' are:
+"Filtering for [SQL criteria], I found [N] movies. Among these, the ones that best match '[semantic concept]' are:
 
 [Combined results with explanations]"
 """
 
 SYNTHESIZER_USER_PROMPT = """User Query: {query}
 
-Structured Query Results:
+SQL Query Results:
 {sql_results}
 
 Semantic Search Results:
@@ -201,9 +241,7 @@ Synthesize these results into a helpful, well-formatted response.
 Be conversational and add relevant insights."""
 
 
-# =============================================================================
 # ERROR MESSAGES
-# =============================================================================
 
 ERROR_NO_RESULTS = """I couldn't find any movies matching your criteria.
 
@@ -230,9 +268,7 @@ Try:
 - Asking about specific genres, directors, or time periods"""
 
 
-# =============================================================================
 # HELPER FUNCTIONS
-# =============================================================================
 
 def format_router_prompt(query: str) -> dict:
     """Format router prompt for LLM"""
@@ -242,11 +278,11 @@ def format_router_prompt(query: str) -> dict:
     }
 
 
-def format_structured_query_prompt(query: str, schema: str) -> dict:
-    """Format structured query prompt for LLM"""
+def format_sql_prompt(query: str, schema: str) -> dict:
+    """Format SQL query prompt for LLM"""
     return {
-        "system": STRUCTURED_QUERY_SYSTEM_PROMPT.format(schema=schema),
-        "user": STRUCTURED_QUERY_USER_PROMPT.format(query=query)
+        "system": SQL_SYSTEM_PROMPT.format(schema=schema),
+        "user": SQL_USER_PROMPT.format(query=query)
     }
 
 
@@ -258,13 +294,21 @@ def format_rag_query_prompt(query: str) -> dict:
     }
 
 
+def format_general_query_prompt(query: str) -> dict:
+    """Format general query prompt for LLM"""
+    return {
+        "system": GENERAL_QUERY_SYSTEM_PROMPT,
+        "user": GENERAL_QUERY_USER_PROMPT.format(query=query)
+    }
+
+
 def format_synthesizer_prompt(query: str, sql_results: str, semantic_results: str) -> dict:
     """Format synthesizer prompt for LLM"""
     return {
         "system": SYNTHESIZER_SYSTEM_PROMPT,
         "user": SYNTHESIZER_USER_PROMPT.format(
             query=query,
-            sql_results=sql_results if sql_results else "No structured results",
+            sql_results=sql_results if sql_results else "No SQL results",
             semantic_results=semantic_results if semantic_results else "No semantic search results"
         )
     }

@@ -1,12 +1,8 @@
-"""
-Streamlit App for IMDB Conversational Agent
-ChatGPT-style interface with streaming responses and multi-thread support
-"""
 import config
 import streamlit as st
 import uuid
 from datetime import datetime
-from agents import query_agent_stream, list_all_threads, get_thread_first_message
+from agents import query_agent_stream, list_all_threads, get_thread_first_message, delete_thread, get_thread_messages
 from config import DUCKDB_PATH, CHROMA_PATH, OPENAI_API_KEY, LLM_MODEL
 
 # =============================================================================
@@ -44,9 +40,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# =============================================================================
 # HELPER FUNCTIONS
-# =============================================================================
 
 
 def create_new_thread() -> str:
@@ -61,9 +55,7 @@ def get_thread_display_name(thread_id: str) -> str:
         return preview
     return f"Chat {thread_id[-8:]}"
 
-# =============================================================================
 # SESSION STATE INITIALIZATION
-# =============================================================================
 
 
 # Initialize current thread
@@ -79,14 +71,16 @@ current_thread = st.session_state['current_thread']
 
 # Initialize messages for current thread if not exists
 if current_thread not in st.session_state['thread_messages']:
-    st.session_state['thread_messages'][current_thread] = []
+    # Try loading from checkpointer first
+    loaded_messages = get_thread_messages(current_thread)
+    st.session_state['thread_messages'][current_thread] = loaded_messages
 
-# =============================================================================
+
 # SIDEBAR
-# =============================================================================
+
 
 with st.sidebar:
-    st.header("🎬 IMDB Movie Chat")
+    st.header("IMDB Movie Chat")
     st.markdown(f"**Model:** {LLM_MODEL}")
     st.markdown("---")
 
@@ -114,16 +108,31 @@ with st.sidebar:
         for thread_id in all_thread_ids[:10]:  # Show max 10 threads
             display_name = get_thread_display_name(thread_id)
 
-            # Highlight current thread
-            if thread_id == current_thread:
-                st.success(f"💬 {display_name}")
-            else:
-                if st.button(display_name, key=f"thread_{thread_id}", use_container_width=True):
-                    st.session_state['current_thread'] = thread_id
-                    # Initialize messages if not exists
-                    if thread_id not in st.session_state['thread_messages']:
-                        st.session_state['thread_messages'][thread_id] = []
-                    st.rerun()
+            # Create columns for thread button and delete button
+            col1, col2 = st.columns([4, 1])
+
+            with col1:
+                # Highlight current thread
+                if thread_id == current_thread:
+                    st.success(f"{display_name}")
+                else:
+                    if st.button(display_name, key=f"thread_{thread_id}", use_container_width=True):
+                        st.session_state['current_thread'] = thread_id
+                        # Load messages from checkpointer
+                        loaded_messages = get_thread_messages(thread_id)
+                        st.session_state['thread_messages'][thread_id] = loaded_messages
+                        st.rerun()
+
+            with col2:
+                # Only show delete button if not current thread
+                if thread_id != current_thread:
+                    if st.button("🗑️", key=f"delete_{thread_id}"):
+                        # Delete from checkpointer
+                        delete_thread(thread_id)
+                        # Delete from session state
+                        if thread_id in st.session_state['thread_messages']:
+                            del st.session_state['thread_messages'][thread_id]
+                        st.rerun()
     else:
         st.caption("No chat history yet")
 
@@ -197,8 +206,8 @@ if user_input:
     # Update session state
     st.session_state['thread_messages'][current_thread] = messages
 
-# =============================================================================
+
 # FOOTER
-# =============================================================================
+
 
 st.markdown("---")

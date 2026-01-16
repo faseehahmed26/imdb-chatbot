@@ -1,8 +1,3 @@
-"""
-Data Setup Module
-Loads IMDB CSV and creates DuckDB database + ChromaDB vector store
-"""
-
 import pandas as pd
 import duckdb
 import chromadb

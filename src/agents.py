@@ -1,40 +1,35 @@
-"""
-Agents Module
-Implements the 4-agent LangGraph workflow for IMDB queries
-"""
-
-from typing import TypedDict, Literal, Optional, List, Dict, Any
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
-import json
-import re
-import sqlite3
-from pathlib import Path
-
-from config import OPENAI_API_KEY, LLM_MODEL
-from tools import get_duckdb_tool, get_chromadb_tool
 from prompts import (
     format_router_prompt,
-    format_structured_query_prompt,
+    format_sql_prompt,
     format_rag_query_prompt,
     format_synthesizer_prompt,
+    format_general_query_prompt,
     ERROR_NO_RESULTS,
     ERROR_SQL_FAILED,
     ERROR_SEMANTIC_FAILED
 )
+from tools import get_duckdb_tool, get_chromadb_tool
+from config import OPENAI_API_KEY, LLM_MODEL
+from pathlib import Path
+import sqlite3
+import re
+import json
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
+from langgraph.graph.message import add_messages
+from langchain_openai import ChatOpenAI
+from typing import TypedDict, Literal, Optional, List, Dict, Any, Annotated
 
 
-# =============================================================================
 # STATE DEFINITION
-# =============================================================================
-
 class AgentState(TypedDict):
     """State passed between agents in the workflow"""
     query: str
-    query_type: Optional[Literal["STRUCTURED", "SEMANTIC", "HYBRID"]]
+    query_type: Optional[Literal["SQL",
+                                 "SEMANTIC", "HYBRID", "GENERAL"]]
     routing_reasoning: Optional[str]
+    messages: Annotated[List[BaseMessage], add_messages]
 
     # Structured query results
     sql_query: Optional[str]
@@ -51,9 +46,7 @@ class AgentState(TypedDict):
     error: Optional[str]
 
 
-# =============================================================================
 # INITIALIZE LLM
-# =============================================================================
 
 def get_llm():
     """Get configured LLM instance"""
@@ -66,15 +59,13 @@ def get_llm():
         openai_api_key=OPENAI_API_KEY
     )
 
-
-# =============================================================================
 # ROUTER AGENT
-# =============================================================================
+
 
 def router_agent(state: AgentState) -> AgentState:
     """
     Route query to appropriate agent(s)
-    Classifies query as STRUCTURED, SEMANTIC, or HYBRID
+    Classifies query as SQL, SEMANTIC, or HYBRID
     """
     query = state["query"]
 
@@ -91,36 +82,44 @@ def router_agent(state: AgentState) -> AgentState:
         content = response.content
 
         # Extract query type from response
+        content_upper = content.upper()
         query_type = None
-        if "STRUCTURED" in content.upper():
-            query_type = "STRUCTURED"
-        elif "SEMANTIC" in content.upper():
+
+        # Look for explicit classification first
+        if "CLASSIFIED AS GENERAL" in content_upper or content_upper.startswith("GENERAL"):
+            query_type = "GENERAL"
+        elif "CLASSIFIED AS SQL" in content_upper or "SQL" in content_upper.split()[0:3]:
+            query_type = "SQL"
+        elif "CLASSIFIED AS SEMANTIC" in content_upper:
             query_type = "SEMANTIC"
-        elif "HYBRID" in content.upper():
+        elif "CLASSIFIED AS HYBRID" in content_upper:
             query_type = "HYBRID"
+        elif "GENERAL" in content_upper:
+            query_type = "GENERAL"
+        elif "SEMANTIC" in content_upper:
+            query_type = "SEMANTIC"
+        elif "SQL" in content_upper:
+            query_type = "SQL"
         else:
-            # Default to STRUCTURED if unclear
-            query_type = "STRUCTURED"
+            query_type = "GENERAL"
 
         state["query_type"] = query_type
         state["routing_reasoning"] = content
-
+        state["messages"] = [response]  # Will be merged by add_messages
         print(f"\n[ROUTER] Classified as: {query_type}")
         print(f"[ROUTER] Reasoning: {content[:200]}...")
 
     except Exception as e:
         print(f"[ROUTER ERROR] {e}")
-        state["query_type"] = "STRUCTURED"  # Default fallback
+        state["query_type"] = "General"  # Default fallback
         state["error"] = f"Router error: {e}"
 
     return state
 
 
-# =============================================================================
-# STRUCTURED QUERY AGENT
-# =============================================================================
+# SQL AGENT
 
-def structured_query_agent(state: AgentState) -> AgentState:
+def sql_agent(state: AgentState) -> AgentState:
     """
     Generate and execute SQL queries for structured data
     """
@@ -133,7 +132,7 @@ def structured_query_agent(state: AgentState) -> AgentState:
 
         # Generate SQL query
         llm = get_llm()
-        prompts = format_structured_query_prompt(query, schema)
+        prompts = format_sql_prompt(query, schema)
 
         messages = [
             SystemMessage(content=prompts["system"]),
@@ -172,9 +171,7 @@ def structured_query_agent(state: AgentState) -> AgentState:
     return state
 
 
-# =============================================================================
 # RAG AGENT
-# =============================================================================
 
 def rag_agent(state: AgentState) -> AgentState:
     """
@@ -233,9 +230,34 @@ def rag_agent(state: AgentState) -> AgentState:
     return state
 
 
-# =============================================================================
+# GENERAL AGENT
+
+def general_agent(state: AgentState) -> AgentState:
+    """Handle general conversational queries without database access"""
+    conversation_messages = state.get("messages", [])
+
+    try:
+        llm = get_llm()
+        prompts = format_general_query_prompt(state["query"])
+
+        messages = [SystemMessage(content=prompts["system"])]
+        messages.extend(conversation_messages)
+
+        response = llm.invoke(messages)
+        state["final_response"] = response.content
+        state["messages"] = [response]
+
+        print(f"\n[GENERAL] Generated conversational response")
+
+    except Exception as e:
+        print(f"[GENERAL ERROR] {e}")
+        state["final_response"] = "Hello! I'm here to help you with movie queries from the IMDB Top 1000 dataset. What would you like to know?"
+        state["error"] = str(e)
+
+    return state
+
+
 # SYNTHESIZER AGENT
-# =============================================================================
 
 def synthesizer_agent(state: AgentState) -> AgentState:
     """
@@ -271,21 +293,21 @@ def synthesizer_agent(state: AgentState) -> AgentState:
             semantic_results_str = f"Semantic Search Error: {state['semantic_error']}"
 
         # Generate response
+        conversation_messages = state.get("messages", [])
+
         llm = get_llm()
         prompts = format_synthesizer_prompt(
             query, sql_results_str, semantic_results_str)
 
-        messages = [
-            SystemMessage(content=prompts["system"]),
-            HumanMessage(content=prompts["user"])
-        ]
+        messages = [SystemMessage(content=prompts["system"])]
+        messages.extend(conversation_messages)
+        messages.append(HumanMessage(content=prompts["user"]))
 
         response = llm.invoke(messages)
         final_response = response.content
 
         state["final_response"] = final_response
-        print(
-            f"\n[SYNTHESIZER] Generated response ({len(final_response)} chars)")
+        state["messages"] = [response]
 
     except Exception as e:
         print(f"[SYNTHESIZER ERROR] {e}")
@@ -295,9 +317,7 @@ def synthesizer_agent(state: AgentState) -> AgentState:
     return state
 
 
-# =============================================================================
 # CHECKPOINTER SETUP
-# =============================================================================
 
 # Create SQLite checkpointer for conversation memory
 _checkpointer = None
@@ -317,23 +337,23 @@ def get_checkpointer():
     return _checkpointer
 
 
-# =============================================================================
 # LANGGRAPH WORKFLOW
-# =============================================================================
 
 def route_based_on_type(state: AgentState) -> List[str]:
     """
     Conditional routing based on query type
     Returns list of next nodes to execute
     """
-    query_type = state.get("query_type", "STRUCTURED")
+    query_type = state.get("query_type", "SQL")
 
-    if query_type == "STRUCTURED":
-        return ["structured_query"]
+    if query_type == "GENERAL":
+        return ["general_query"]
+    elif query_type == "SQL":
+        return ["sql_query"]
     elif query_type == "SEMANTIC":
         return ["semantic_query"]
     else:  # HYBRID
-        return ["structured_query", "semantic_query"]
+        return ["sql_query", "semantic_query"]
 
 
 def create_workflow() -> StateGraph:
@@ -345,8 +365,9 @@ def create_workflow() -> StateGraph:
 
     # Add nodes
     workflow.add_node("route_query", router_agent)
-    workflow.add_node("structured_query", structured_query_agent)
+    workflow.add_node("sql_query", sql_agent)
     workflow.add_node("semantic_query", rag_agent)
+    workflow.add_node("general_query", general_agent)
     workflow.add_node("synthesize", synthesizer_agent)
 
     # Set entry point
@@ -357,13 +378,15 @@ def create_workflow() -> StateGraph:
         "route_query",
         route_based_on_type,
         {
-            "structured_query": "structured_query",
+            "general_query": "general_query",
+            "sql_query": "sql_query",
             "semantic_query": "semantic_query"
         }
     )
 
-    # Both query types lead to synthesizer
-    workflow.add_edge("structured_query", "synthesize")
+    # Query types lead to synthesizer or END
+    workflow.add_edge("general_query", END)
+    workflow.add_edge("sql_query", "synthesize")
     workflow.add_edge("semantic_query", "synthesize")
 
     # Synthesizer is the end
@@ -372,10 +395,6 @@ def create_workflow() -> StateGraph:
     # Compile with checkpointer for conversation memory
     return workflow.compile(checkpointer=get_checkpointer())
 
-
-# =============================================================================
-# MAIN INTERFACE
-# =============================================================================
 
 # Create workflow instance
 _workflow = None
@@ -389,20 +408,25 @@ def get_workflow():
     return _workflow
 
 
-def query_agent(query: str) -> Dict[str, Any]:
+# Agent For Queries
+
+def query_agent(query: str, thread_id: str = "default") -> Dict[str, Any]:
     """
     Main interface to query the agent system
 
     Args:
         query: User's natural language query
+        thread_id: Thread ID for conversation memory (default: "default")
 
     Returns:
         Dict containing the final response and intermediate results
     """
     workflow = get_workflow()
+    config = {'configurable': {'thread_id': thread_id}}
 
-    # Initialize state
+    # Initialize state with NEW message
     initial_state = {
+        "messages": [HumanMessage(content=query)],
         "query": query,
         "query_type": None,
         "routing_reasoning": None,
@@ -422,7 +446,7 @@ def query_agent(query: str) -> Dict[str, Any]:
         print(f"Processing query: {query}")
         print(f"{'='*60}")
 
-        result = workflow.invoke(initial_state)
+        result = workflow.invoke(initial_state, config=config)
 
         return {
             "success": True,
@@ -461,8 +485,9 @@ def query_agent_stream(query: str, thread_id: str = "default"):
     workflow = get_workflow()
     config = {'configurable': {'thread_id': thread_id}}
 
-    # Initialize state
+    # Initialize state with NEW message (will merge with existing)
     initial_state = {
+        "messages": [HumanMessage(content=query)],
         "query": query,
         "query_type": None,
         "routing_reasoning": None,
@@ -489,10 +514,9 @@ def query_agent_stream(query: str, thread_id: str = "default"):
             "error": str(e)
         }
 
-
-# =============================================================================
 # THREAD MANAGEMENT
 # =============================================================================
+
 
 def list_all_threads() -> List[str]:
     """List all conversation threads"""
@@ -523,21 +547,24 @@ def get_thread_messages(thread_id: str) -> List[Dict[str, Any]]:
         state = workflow.get_state(config)
 
         if state and state.values:
-            # Extract conversation history from state
-            messages = []
-            # The state contains query/response pairs
-            # We'll reconstruct a simple message history
-            if state.values.get('query'):
-                messages.append({
-                    'role': 'user',
-                    'content': state.values['query']
+            # Extract full message history from state
+            messages_from_state = state.values.get('messages', [])
+
+            formatted_messages = []
+            for msg in messages_from_state:
+                if isinstance(msg, HumanMessage):
+                    role = 'user'
+                elif isinstance(msg, SystemMessage):
+                    continue  # Skip system messages in UI
+                else:  # AIMessage or other
+                    role = 'assistant'
+
+                formatted_messages.append({
+                    'role': role,
+                    'content': msg.content
                 })
-            if state.values.get('final_response'):
-                messages.append({
-                    'role': 'assistant',
-                    'content': state.values['final_response']
-                })
-            return messages
+
+            return formatted_messages
         return []
     except Exception as e:
         print(f"Error getting thread messages: {e}")
@@ -552,3 +579,31 @@ def get_thread_first_message(thread_id: str) -> str:
         # Truncate to 50 characters
         return first_msg[:50] + "..." if len(first_msg) > 50 else first_msg
     return thread_id
+
+
+def delete_thread(thread_id: str) -> bool:
+    """
+    Delete a conversation thread from checkpointer
+
+    Args:
+        thread_id: Thread identifier to delete
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        db_path = Path(__file__).parent.parent / "data" / "imdb_chatbot.db"
+        if db_path.exists():
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM checkpoints WHERE thread_id = ?",
+                (thread_id,)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        return False
+    except Exception as e:
+        print(f"Error deleting thread {thread_id}: {e}")
+        return False

@@ -7,19 +7,20 @@ import duckdb
 import chromadb
 from pathlib import Path
 from typing import Optional, Dict, List, Any
+from openai import OpenAI
 
-from config import DUCKDB_PATH, CHROMA_PATH
+from config import DUCKDB_PATH, CHROMA_PATH, OPENAI_API_KEY, EMBEDDING_MODEL
 
 
 class DuckDBTool:
     """Tool for executing SQL queries on DuckDB"""
-    
+
     def __init__(self, db_path: Path = DUCKDB_PATH):
         """Initialize DuckDB connection"""
         self.db_path = db_path
         self.con = None
         self._connect()
-    
+
     def _connect(self):
         """Establish database connection"""
         if not self.db_path.exists():
@@ -28,14 +29,14 @@ class DuckDBTool:
                 "Please run 'python -m src.data_setup' first."
             )
         self.con = duckdb.connect(str(self.db_path), read_only=False)
-    
+
     def execute_query(self, sql: str) -> Dict[str, Any]:
         """
         Execute SQL query and return results
-        
+
         Args:
             sql: SQL query string
-            
+
         Returns:
             Dict with 'success', 'data' (if successful), or 'error' (if failed)
         """
@@ -52,11 +53,11 @@ class DuckDBTool:
                 "error": str(e),
                 "sql": sql
             }
-    
+
     def get_schema(self) -> str:
         """
         Return database schema for use in prompts
-        
+
         Returns:
             Formatted schema string with column names, types, and descriptions
         """
@@ -89,14 +90,15 @@ Sample Data:
             schema_info += sample.to_string(index=False)
         except Exception as e:
             schema_info += f"Error fetching sample: {e}"
-        
+
         return schema_info
-    
+
     def get_table_stats(self) -> Dict[str, Any]:
         """Get basic statistics about the database"""
         try:
             stats = {}
-            stats['total_movies'] = self.con.execute("SELECT COUNT(*) FROM imdb").fetchone()[0]
+            stats['total_movies'] = self.con.execute(
+                "SELECT COUNT(*) FROM imdb").fetchone()[0]
             stats['year_range'] = self.con.execute(
                 "SELECT MIN(Released_Year), MAX(Released_Year) FROM imdb WHERE Released_Year IS NOT NULL"
             ).fetchone()
@@ -106,16 +108,16 @@ Sample Data:
             stats['top_genres'] = self.con.execute(
                 "SELECT DISTINCT Genre FROM imdb LIMIT 10"
             ).fetchdf()['Genre'].tolist()
-            
+
             return {"success": True, "stats": stats}
         except Exception as e:
             return {"success": False, "error": str(e)}
-    
+
     def close(self):
         """Close database connection"""
         if self.con:
             self.con.close()
-    
+
     def __del__(self):
         """Cleanup on deletion"""
         self.close()
@@ -123,15 +125,17 @@ Sample Data:
 
 class ChromaDBTool:
     """Tool for semantic search using ChromaDB"""
-    
+
     def __init__(self, persist_dir: Path = CHROMA_PATH, collection_name: str = "imdb_overviews"):
         """Initialize ChromaDB client and collection"""
         self.persist_dir = persist_dir
         self.collection_name = collection_name
         self.client = None
         self.collection = None
+        self.openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        self.embedding_model = EMBEDDING_MODEL
         self._connect()
-    
+
     def _connect(self):
         """Establish ChromaDB connection"""
         if not self.persist_dir.exists():
@@ -139,9 +143,9 @@ class ChromaDBTool:
                 f"ChromaDB not found at {self.persist_dir}. "
                 "Please run 'python -m src.data_setup' first."
             )
-        
+
         self.client = chromadb.PersistentClient(path=str(self.persist_dir))
-        
+
         try:
             self.collection = self.client.get_collection(self.collection_name)
         except Exception as e:
@@ -149,36 +153,41 @@ class ChromaDBTool:
                 f"Collection '{self.collection_name}' not found. "
                 f"Please run 'python -m src.data_setup' first. Error: {e}"
             )
-    
+
     def search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         n_results: int = 10,
         where_filter: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """
         Perform semantic search
-        
+
         Args:
             query: Natural language search query
             n_results: Number of results to return
             where_filter: Optional metadata filter (e.g., {"Genre": {"$contains": "Comedy"}})
-            
+
         Returns:
             Dict with 'success', 'movies' (list of results), or 'error'
         """
         try:
+            query_response = self.openai_client.embeddings.create(
+                model=self.embedding_model,
+                input=[query]
+            )
+            query_embedding = query_response.data[0].embedding
+
             query_params = {
-                "query_texts": [query],
+                "query_embeddings": [query_embedding],
                 "n_results": n_results
             }
-            
+
             if where_filter:
                 query_params["where"] = where_filter
-            
+
             results = self.collection.query(**query_params)
-            
-            # Format results
+
             movies = []
             for i in range(len(results['ids'][0])):
                 movie = {
@@ -188,7 +197,7 @@ class ChromaDBTool:
                     'distance': results['distances'][0][i] if 'distances' in results else None
                 }
                 movies.append(movie)
-            
+
             return {
                 "success": True,
                 "movies": movies,
@@ -200,7 +209,7 @@ class ChromaDBTool:
                 "error": str(e),
                 "query": query
             }
-    
+
     def search_with_structured_filter(
         self,
         query: str,
@@ -209,12 +218,12 @@ class ChromaDBTool:
     ) -> Dict[str, Any]:
         """
         Search within a subset of movies (for hybrid queries)
-        
+
         Args:
             query: Semantic search query
             movie_ids: List of movie IDs to search within
             n_results: Number of results to return
-            
+
         Returns:
             Dict with search results
         """
@@ -222,16 +231,16 @@ class ChromaDBTool:
         # and filter in post-processing
         try:
             all_results = self.search(query, n_results=n_results * 3)
-            
+
             if not all_results['success']:
                 return all_results
-            
+
             # Filter to only include movies in movie_ids
             filtered_movies = [
                 movie for movie in all_results['movies']
                 if movie['id'] in movie_ids
             ][:n_results]
-            
+
             return {
                 "success": True,
                 "movies": filtered_movies,
@@ -242,22 +251,22 @@ class ChromaDBTool:
                 "success": False,
                 "error": str(e)
             }
-    
+
     def get_collection_stats(self) -> Dict[str, Any]:
         """Get statistics about the collection"""
         try:
             count = self.collection.count()
-            
+
             # Get sample documents
             sample = self.collection.peek(limit=3)
-            
+
             return {
                 "success": True,
                 "stats": {
                     "total_documents": count,
                     "collection_name": self.collection_name,
                     "sample_titles": [
-                        meta.get('Series_Title', 'Unknown') 
+                        meta.get('Series_Title', 'Unknown')
                         for meta in sample['metadatas']
                     ]
                 }

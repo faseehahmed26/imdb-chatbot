@@ -182,7 +182,7 @@ python -m src.data_setup
 
 **`AgentState` (TypedDict)**
 - `query`: User's question
-- `query_type`: STRUCTURED/SEMANTIC/HYBRID
+- `query_type`: STRUCTURED/SEMANTIC/HYBRID/GENERAL
 - `routing_reasoning`: Why this classification
 - `sql_query`: Generated SQL (if applicable)
 - `sql_results`: Query results (if applicable)
@@ -191,13 +191,69 @@ python -m src.data_setup
 - `final_response`: Final answer
 - `error`: Any errors
 
+### State Variables Reference Log
+
+**Complete reference of all state variables used throughout the workflow:**
+
+| Variable | Type | Purpose | Set By | Used By |
+|----------|------|---------|--------|---------|
+| `query` | str | User's original question | Initial state | All agents |
+| `query_type` | Literal | Classification (STRUCTURED/SEMANTIC/HYBRID/GENERAL) | router_agent | route_based_on_type |
+| `routing_reasoning` | str | Why query was classified this way | router_agent | Display in UI |
+| `sql_query` | str | Generated SQL query | structured_query_agent | Display, debugging |
+| `sql_results` | dict | Database query results | structured_query_agent | synthesizer_agent |
+| `sql_error` | str | SQL execution error if any | structured_query_agent | Error handling |
+| `semantic_query` | str | Formulated semantic search | rag_agent | Display, debugging |
+| `semantic_results` | dict | Vector search results | rag_agent | synthesizer_agent |
+| `semantic_error` | str | Search error if any | rag_agent | Error handling |
+| `final_response` | str | Final answer to user | synthesizer_agent OR general_agent | Return to user |
+| `error` | str | Any workflow errors | Any agent | Error display |
+
+**State Flow Example (STRUCTURED Query):**
+
+```
+Initial State:
+{
+  "query": "Top 5 movies of 2019",
+  "query_type": None,
+  ...all other fields None
+}
+
+After router_agent:
+{
+  "query": "Top 5 movies of 2019",
+  "query_type": "STRUCTURED",
+  "routing_reasoning": "This requires filtering by year and sorting..."
+}
+
+After structured_query_agent:
+{
+  ...previous fields,
+  "sql_query": "SELECT ... WHERE Released_Year = 2019 LIMIT 5",
+  "sql_results": {"success": True, "data": [...], "row_count": 5}
+}
+
+After synthesizer_agent:
+{
+  ...previous fields,
+  "final_response": "Here are the top 5 movies from 2019..."
+}
+```
+
+**GENERAL Query Flow:**
+
+```
+Query: "Hi" → router_agent → query_type = "GENERAL" → general_agent → final_response 
+(skips database/vector search entirely)
+```
+
 ### Agent Functions
 
 #### `router_agent(state: AgentState) → AgentState`
 **What it does:**
 1. Takes user query from state
 2. Calls LLM with router prompts
-3. Classifies as STRUCTURED/SEMANTIC/HYBRID
+3. Classifies as STRUCTURED/SEMANTIC/HYBRID/GENERAL
 4. Updates state with classification and reasoning
 5. Returns updated state
 
@@ -223,22 +279,32 @@ python -m src.data_setup
 3. Calls LLM to generate conversational response
 4. Updates state with final response
 
+#### `general_agent(state: AgentState) → AgentState`
+**What it does:**
+1. Handles conversational queries without database access
+2. Calls LLM with general query prompts
+3. Generates friendly, movie-focused response
+4. Rejects off-topic requests
+5. Updates state with final response directly (skips synthesizer)
+
 ### Workflow Functions
 
 #### `route_based_on_type(state) → List[str]`
 **Conditional routing logic:**
+- If GENERAL → returns `["general_query"]`
 - If STRUCTURED → returns `["structured_query"]`
 - If SEMANTIC → returns `["semantic_query"]`
 - If HYBRID → returns `["structured_query", "semantic_query"]` (both)
 
 #### `create_workflow() → StateGraph`
 **Creates LangGraph workflow:**
-1. Adds all 4 agent nodes
+1. Adds all 5 agent nodes (router, structured, semantic, general, synthesizer)
 2. Sets entry point to `route_query`
 3. Adds conditional edges based on query type
-4. Both query agents lead to synthesizer
-5. Synthesizer leads to END
-6. Compiles and returns workflow
+4. GENERAL leads directly to END
+5. STRUCTURED and SEMANTIC lead to synthesizer
+6. Synthesizer leads to END
+7. Compiles and returns workflow
 
 #### `query_agent(query: str) → dict`
 **Main entry point:**
