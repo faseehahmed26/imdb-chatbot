@@ -4,9 +4,9 @@ A LangGraph-powered conversational agent for querying the IMDB Top 1000 dataset 
 
 ## Architecture
 
-![Agent Workflow](images/AgentOverview.jpeg)
-
-
+<p align="center">
+  <img src="images/AgentOverview.jpeg" alt="Agent Workflow" width="700">
+</p>
 **3 Query Types:**
 - **STRUCTURED**: SQL-based filtering/sorting (e.g., "Top 5 movies of 2019")
 - **SEMANTIC**: Theme-based search (e.g., "Movies with police involvement")  
@@ -87,22 +87,6 @@ realpage-imdb/
 - **Streamlit**: Web UI
 - **LangSmith** (optional): Monitoring and tracing
 
-## Documentation
-
-- **[CODE_REFERENCE.md](CODE_REFERENCE.md)**: Detailed explanation of each file and function
-- **Source code**: All files have inline documentation
-
-## Assignment Requirements
-
-This project fulfills the RealPage take-home assignment requirements:
-- Conversational agent using OpenAI API
-- Queries IMDB dataset
-- Handles all 9 test questions (structured + semantic)
-- Streamlit UI
-- Can run locally
-- Vector store for semantic search
-- Instructions to run
-
 ## Troubleshooting
 
 **"Database not found"**: Run `python -m src.data_setup`
@@ -111,10 +95,4 @@ This project fulfills the RealPage take-home assignment requirements:
 
 **Module import errors**: Ensure you're running commands from the `realpage-imdb/` directory
 
-## License
 
-Educational/Interview project
-
----
-
-**Built with LangGraph + DuckDB + ChromaDB**
